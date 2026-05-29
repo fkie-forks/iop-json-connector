@@ -6,9 +6,7 @@
 #
 # ****************************************************************************
 
-import fnmatch
 import json
-import os
 import threading
 import time
 from types import SimpleNamespace
@@ -57,6 +55,7 @@ class WsClientHandler(WebSocket):
                 printLog = self.logger.message(msg, "recv WS")
                 jAddr = JausAddress.from_string(msg.jausIdSrc)
                 if jAddr not in self.jausAddresses:
+                    print(f"{self.address} ADD jAddr: {msg.jausIdSrc}")
                     self.jausAddresses.append(jAddr)
                     # TODO wait for accept from node manager before put it into jausAddresses
                     self.udpSocket.connectJausAddress(jAddr)
@@ -89,6 +88,11 @@ class WsClientHandler(WebSocket):
         for client in self.clients:
             client.send_message(self.address[0] + u' - disconnected')
 
+    def has_receiver(self, address: JausAddress):
+        for a in self.jausAddresses:
+            if a.match(address):
+                return True
+        return False
 
 class Server():
 
@@ -185,6 +189,10 @@ class Server():
         jsonObj = WsClientHandler.msgSerializer.unpack(msg)
         printLog = self.logger.message(jsonObj, "recv UDP")
         for client in WsClientHandler.clients:
-            if printLog:
-                self.logger.info(f"  -> forward to: {client.jausAddresses}")
-            client.send_message(json.dumps(jsonObj, cls=SelfEncoder))
+            if client.has_receiver(msg.dst_id):
+                if printLog:
+                    self.logger.info(f"  -> forward to: {client.jausAddresses}")
+                client.send_message(json.dumps(jsonObj, cls=SelfEncoder))
+                # jaus ID was requested. Do not forward the same message to two clients with 0.0.0
+                if msg.dst_id == JausAddress(0):
+                    break
